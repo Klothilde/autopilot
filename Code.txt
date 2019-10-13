@@ -1,0 +1,223 @@
+//Autopilot Maxsimplex
+// Mit Ruderlagepotentiometer
+// Mit Aktivierung der Rudermaschine
+// Mit Aktivierung der Kupplung
+// Mit Sollkursfeststellung nach dem Reset.
+// Kompass ohne Tiltkompensation angelehnt an eine Formel aus
+// https://circuitdigest.com/microcontr...gital-compass-
+with-arduino-and-hmc5883l-magnetometer
+// mit beruhigten Werten
+//**************** Funktioniert! *****************************
+#include<Wire.h> // Library für den I2C-Bus
+int ruderlagepin = A7; // Ruderlagepotentiometer ist mit AnIn 7 verbunden
+int ruderlage = 0; // Aktuelle Ruderlage Wertebereich: 10-1000 (erreicht nicht den Anschlag)
+int ruderlageMitte = 500;// Noch zu ermittelnder Wert für Ruder mittschiffs
+int anschlaglinks = 1000;// Noch zu ermittelnder Wert für den Anschlag Links
+int anschlagrechts = 10;// Noch zu ermittelnder Wert für den Anschlag Rechts
+const int MAG=0x1E; // I2C Adresse des Magnetometers 7bit Adresse
+const int MPU=0x68; // I2C address of the MPU-6050
+float Sollkurs = 0; //Sollkurs ist eine Float-Zahl (mit 2 Nachkommastellen)
+float Kurs = 0; // Kurs ist eine Float-Zahl (mit 2 Nachkommastellen)
+int iSollkurs = 0; //Zählvariable zur Beruhigung des Sollkurs.
+int Kursdifferenz; //Differenz zwischen Soll-Kurs und Ist-Kurs ist eine INT-Zahl
+int16_t ax = 0; // Beschleunigung Querachse (Pitch)
+int16_t ay = 0; // Beschleunigung Längsachse (Roll)
+int16_t az = 0; // Beschleunigung Hochachse (Yaw)
+int16_t mx = 0; // Magnetvektor Längsachse
+int16_t my = 0; // Magnetvektor Querachse
+int16_t mz = 0; // Magnetvektor Hochachse
+int16_t tmp = 0; // Temperatur aus dem MPU
+int16_t gx = 0; // Drehbeschleunigung Längsachse
+int16_t gy = 0; // Drehbeschleunigung Querachse
+int16_t gz = 0; // Drehbeschleunigung Hochachse
+int16_t arraymx[11]; // Array zum Speichern von 10 Magnetrohwerten x für Glättung
+int16_t arraymy[11]; // Array zum Speichern von 10 Magnetrohwerten y für Glättung
+int16_t arraymz[11]; // Array zum Speichern von 10 Magnetrohwerten z für Glättung
+int iM = 0; // Zählervariable für Magnetwert
+
+//************************************************** *********************
+//Die Eingänge IN1 und IN2 des BTN7971 liegen an DO5 bzw DO10
+int ENkupplung = 7; // ENable ist mit DO 7 verbunden
+int IN1kupplung = 5; // IN1 ist mit DO 5 verbunden
+int IN2kupplung = 10; // IN2 ist mit DO 10 verbunden
+int CTkupplung = A6; // Strommessung ist mit AnIn 6 verbunden
+int Kpwm = 0; // Anfangswert für das PWM-Signal, 0-255
+int i = 10; // Variable für Increment
+int d = 10; // Variable für Delay
+//************************************************** *******************
+//Die Eingänge IN1 und IN2 des BTN7971 liegen an DO3 bzw DO6
+int ENmotor = 8; // ENable für den Motor ist mit DO 8 verbunden
+int IN1motor = 6; // IN1 für den Motor ist mit DO 6 verbunden
+int IN2motor = 3; // IN2 für den Motor ist mit DO 3 verbunden
+int CTmotor = A3; // Strommessung für den Motor ist mit AnIn 3 verbunden
+int Mstrom = 0; // Ergebnis der Motorstrommessung
+int Mpwm = 0; // Anfangswert für das Motor-PWM-Signal, 0-255
+//************************************************** *******************
+void vorwaerts() //Rudermaschine dreht vorwärts
+{
+digitalWrite(ENmotor,HIGH); // für echten Betrieb auf HIGH setzen
+digitalWrite(IN1motor,LOW);
+analogWrite(IN2motor,Mpwm);
+Mstrom = analogRead(A3);// read the input on analog pin 3:
+Serial.print("Vor");
+
+}
+//************************************************** ******************
+void rueckwaerts() //Rudermaschine dreht rückwärts
+{
+digitalWrite(ENmotor,HIGH); // für echten Betrieb auf HIGH setzen
+digitalWrite(IN2motor,LOW);
+analogWrite(IN1motor,Mpwm);
+Mstrom = analogRead(A3);// read the input on analog pin 3:
+Serial.print("Rück");
+}
+//************************************************** *******************
+void berechneMpwm() // Berechnen des erforderlichen Motordrehmoments
+{
+Mpwm = abs (Kursdifferenz) * 10;
+if (Mpwm > 255) //Verhinderung von sinnlosen Werten über 255
+{
+Mpwm = 255;
+}
+}
+//************************************************** *******************
+void KupplungEin() // Kupplung in Eingriff bringen (Nur im Setup zu aktivieren)
+
+{
+digitalWrite(ENkupplung,HIGH);
+digitalWrite(IN1kupplung,LOW);
+analogWrite(IN2kupplung,255); //Voller PWM-Wert
+}
+//************************************************** ********************
+void read_mag() // Subroutine zum Lesen der Magnetvektoren (nach erfolgter Initialisierung)
+{
+Wire.beginTransmission(MAG);
+Wire.write(byte(0x03));
+Wire.endTransmission();
+Wire.requestFrom(MAG,6);
+if(Wire.available()<=6)
+{
+mx=Wire.read()<<8;
+mx|=Wire.read();
+mz=Wire.read()<<8;
+mz|=Wire.read();
+my=Wire.read()<<8;
+my|=Wire.read();
+}
+
+}
+//************************************************** ************************************
+void glaetteMagnetrohwert()
+{ // 1.) Array beschreiben
+arraymx[iM] = mx; //Array entsprechend iM mit Magnetwert x beschreiben
+arraymy[iM] = my; //Array entsprechend iM mit Magnetwert y beschreiben
+arraymz[iM] = mz; //Array entsprechend iM mit Magnetwert z beschreiben
+iM=iM+1; // Zeiger für den nächsten Durchlauf inkrementieren
+
+if (iM>10)
+
+{
+iM=0; // Array voll, Zeiger zurücksetzen
+}
+
+//2.) Array lesen
+mx=(arraymx[0]+arraymx[1]+arraymx[2]+arraymx[3]+arraymx[4]+arraymx[5]+
+arraymx[6]+arraymx[7]+arraymx[8]+arraymx[9]+arraymx[10])/10;
+//Durchschnitt aus 10 Werten
+my=(arraymy[0]+arraymy[1]+arraymy[2]+arraymy[3]+arraymy[4]+arraymy[5]
++arraymy[6]+arraymy[7]+arraymy[8]+arraymy[9]+arraymy[9])/10;
+//Durchschnitt aus 10 Werten
+mz=(arraymz[0]+arraymz[1]+arraymz[2]+arraymz[3]+arraymz[4]+arraymz[5]
++arraymz[6]+arraymz[7]+arraymz[8]+arraymz[9]+arraymz[9])/10;
+//Durchschnitt aus 10 Werten
+//Nach dieser Routine sind die Kompassrohwerte mx, my, mz beruhigt
+
+}
+//************************************************** *************************************
+
+void berechneKurs()
+{
+Kurs = atan2(my, mx)/0.0174532925;
+
+if(Kurs < 0)
+Kurs+=360;
+Kurs = 360-Kurs;
+}
+//************************************************** *********************
+void berechneKursdifferenz()
+{
+Kursdifferenz = Kurs - Sollkurs;
+if (Kursdifferenz< -180){Kursdifferenz = Kursdifferenz + 360;}
+if (Kursdifferenz> 180){Kursdifferenz = Kursdifferenz - 360;}
+}
+//************************************************** *********************
+void leseruderlage()// Ruderlage lesen und auf Anschlag testen
+{
+ruderlage = analogRead(ruderlagepin);
+if (ruderlage >1000){digitalWrite(ENmotor,LOW);}// Motor aus
+if (ruderlage <10){digitalWrite(ENmotor,LOW);}// Motor aus
+}
+//************************************************** **********************
+void setup() {
+
+
+Wire.begin();
+Wire.beginTransmission(MPU);
+Wire.write(0x6B); // PWR_MGMT_1 register
+Wire.write(0); // set to zero (wakes up the MPU-6050)
+Wire.endTransmission(true); Wire.begin(); //Kompass
+Wire.beginTransmission(MAG); // Modus continous
+Wire.write(byte(0x02)); //Sendung für X MSB register Magnetometer
+Wire.write(byte(0x00));
+Wire.endTransmission(); // Ende der Sendung
+Serial.begin(9600); // Serial Monitor initialisieren
+for (iSollkurs=0; iSollkurs<11; iSollkurs ++ ) //Zählschleife zum Lesen des Sollkurses (10*)
+{ read_mag();
+glaetteMagnetrohwert();
+berechneKurs();
+Sollkurs = Kurs; //Der im Setup festgestellte Kurs ist der Sollkurs.
+
+}
+KupplungEin(); // Kupplung in Eingriff bringen
+
+}
+
+
+void loop() {
+Wire.beginTransmission(MPU);
+Wire.write(0x3B); //Accel_XOUT-H
+Wire.endTransmission(false);
+Wire.requestFrom(MPU,14,true); // requests 6 Register (H+L pro Vektor)
+ax=Wire.read()<<8|Wire.read(); //0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
+ay=Wire.read()<<8|Wire.read(); //0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+az=Wire.read()<<8|Wire.read(); //0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+tmp=Wire.read()<<8|Wire.read(); // 0x41 (TEMP_OUT_H) & 0x42 (TEMP_OUT_L)
+gx=Wire.read()<<8|Wire.read(); // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
+gy=Wire.read()<<8|Wire.read(); // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
+gz=Wire.read()<<8|Wire.read(); // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+read_mag();
+glaetteMagnetrohwert();
+berechneKurs();
+berechneKursdifferenz();
+berechneMpwm();
+if (Kursdifferenz < 0)//Entscheidung ob Rudermaschine vorwärts oder rückwärts
+{
+vorwaerts(); //Rudermaschine dreht vorwärts
+}
+else
+{
+rueckwaerts(); //Rudermaschine dreht rückwärts
+}
+
+Serial.print(" Kurs ");
+Serial.print(Kurs);
+Serial.print(" Sollkurs ");
+Serial.print(Sollkurs);
+Serial.print(" Kursdiff. ");
+Serial.print(Kursdifferenz);
+Serial.print(" Mpwm ");
+Serial.print(Mpwm);
+Serial.print(" Ruderlage ");
+Serial.println(ruderlage);
+//delay (10);
+} 
