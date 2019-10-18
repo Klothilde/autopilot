@@ -9,7 +9,7 @@
 //**************** Funktioniert! *****************************
 #include<Wire.h> // Library fuer den I2C-Bus
 
-// Libraries für den GY-88
+// Libraries fÃ¼r den GY-88
 #include "HMC5883L.h"
 #include "MPU6050.h"
 #include "I2Cdev.h"
@@ -30,7 +30,7 @@ float Kurs = 0;
 int Kursdifferenz = 0;
 
 
-// Variablen die von den Sensoren befüllt werden
+// Variablen die von den Sensoren befÃ¼llt werden
 //**************************************************
 int16_t ax = 0, ay = 0, az = 0; // Beschleunigungsvektor: Yaw, Pitch, Roll
 int16_t mx = 0, my = 0, mz = 0; // Magnetvektor x: Laengsachse, y: Querachse, z: Hochachse
@@ -83,9 +83,9 @@ void setup() {
   accelgyro.setI2CBypassEnabled(true) ;
   accelgyro.setSleepEnabled(false);
   
-  // Serial Monitor initialisieren - Achtung! Baudrate muss übereinstimmen
-  // Könnte sein, das der Kompass 9600 benötigt, und der accelgyro 57600 oder 38400
-  // Dann müsste man zwischen den Baudraten wechseln
+  // Serial Monitor initialisieren - Achtung! Baudrate muss Ã¼bereinstimmen
+  // KÃ¶nnte sein, das der Kompass 9600 benÃ¶tigt, und der accelgyro 57600 oder 38400
+  // Dann mÃ¼sste man zwischen den Baudraten wechseln
   Serial.begin(9600); 
   
   // Modus des Kompass auf Continous stellen
@@ -94,7 +94,7 @@ void setup() {
     Serial.println(compass.GetErrorText(error));
   
   // Programminitialisierung
-  LadeUndGlaetteSensorDaten(); // Lade und Glätte Magnetwerte
+  LadeUndGlaetteSensorDaten(); // Lade und GlÃ¤tte Magnetwerte
   berechneKursMitNeigungsausgleich();
   Sollkurs = Kurs; // Der aktuelle Kurs ist der Sollkurs
   KupplungEin(); // Kupplung in Eingriff bringen
@@ -184,12 +184,12 @@ void LadeUndGlaetteSensorDaten()
   int smx = 0, smy = 0, smz = 0; 
   int sgx = 0, sgy = 0, sgz = 0;
   for (int i = 0; i < loops; i++) {
-    // Temporäre Variablen um den aktuellen Wert auszulesen
+    // TemporÃ¤re Variablen um den aktuellen Wert auszulesen
     int tax, tay, taz, tgx, tgy, tgz; 
     // aktuelle Sensorwerte auslesen
     MagnetometerRaw raw = compass.ReadRawAxis(); 
     accelgyro.getMotion6(&tax, &tay, &taz, &tgx, &tgy, &tgz);
-    // Summen für den Durchschnitt berechnen
+    // Summen fÃ¼r den Durchschnitt berechnen
     smx += raw.XAxis;
     smy += raw.YAxis;
     smz += raw.ZAxis;
@@ -200,7 +200,7 @@ void LadeUndGlaetteSensorDaten()
     sgy += tgy;
     sgz += tgz;
   }
-  // Durchschnitt berechnen & Sensorvariablen befüllen
+  // Durchschnitt berechnen & Sensorvariablen befÃ¼llen
   mx = smx / loops;
   my = smy / loops;
   mz = smz / loops;
@@ -231,7 +231,7 @@ void berechneKursMitNeigungsausgleich() {
   if (roll > 0.78 || roll < -0.78 || pitch > 0.78 || pitch < -0.78)
     return;
 
-  // Vorabberechnung, da die Werte gleich mehrfach benötigt werden.
+  // Vorabberechnung, da die Werte gleich mehrfach benÃ¶tigt werden.
   float sinRoll = sin(roll);
   float cosPitch = cos(pitch);
   float sinPitch = sin(pitch);
@@ -241,7 +241,7 @@ void berechneKursMitNeigungsausgleich() {
   float Yh = mx * sinRoll * sinPitch + my * cos(roll) - mz * sinRoll * cosPitch;
   float aktuellerKurs = atan2(Yh, Xh);
   
-  aktuellerKurs = aktuellerKurs * 180 / M_PI; // Umwandlung in Winkelmaß
+  aktuellerKurs = aktuellerKurs * 180 / M_PI; // Umwandlung in WinkelmaÃŸ
   
   Kurs = aktuellerKurs; // Neuen Kurs speichern
 }
