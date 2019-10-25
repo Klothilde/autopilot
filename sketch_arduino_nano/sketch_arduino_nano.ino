@@ -11,12 +11,6 @@
 // inserted tilt compensation per function
 // compass output calmed by aritmetic Filter
 //
-// TODO list
-// - return() fehlt überall??
-// - return value, alles void??
-// - return oder return()?
-//
-//
 //**************************************************
 
 // Library for arduino pin
@@ -226,7 +220,7 @@ float GetCurrentHeading(bool tiltCompensation)
     // Neigungsausgleich
     float x_h = mx * sin_roll * sin_pitch + my * cos(roll) - mz * sin_roll * cos_pitch; //berichtigt, war y_h  
     float y_h = mx * cos_pitch + mz * sin_pitch; // berichtigt, war x_h
-    float course_comp = atan2(x_h, y_h); // berichtigt, y_h <-> x_h ausgetauscht
+    float course_comp = atan2(y_h, x_h);
     return course_comp * 180 / M_PI; // Umwandlung in Winkelmaß
   }
 }
@@ -249,15 +243,16 @@ void activate_clutch() // activate clutch only via setup (Nur im Setup zu aktivi
 // Return:
 // calc of motor speed for giving course_delta
 // set pulse width modulation (pwm) ramp by value *10
-// pwm value min=0 to max=255
+// pwm value min=0 to max=255 (uint8_t)
 //
 //**************************************************
-float GetMotorPwm(float course_delta)
+uint8_t GetMotorPwm(float course_delta)
 {
-  if (abs(course_delta) * 10 > 255) //Verhinderung von sinnlosen Werten ueber 255
-    return 255;
-  else
-    return abs(course_delta) * 10;
+  float calculation = abs(course_delta) * 10;
+  uint8_t result = 255;
+  if (calculation < 255)
+    result = (uint8_t)calculation;// "type cast": changing from float to uint8_t
+  return result;
 }
 
 
@@ -269,7 +264,7 @@ float GetMotorPwm(float course_delta)
 //**************************************************
 void SetRudder(float courseDelta){
   activate_clutch();
-  digitalWrite(MOTOR_EN, HIGH); // doppelt vorhanden?
+  digitalWrite(MOTOR_EN, HIGH); // doppelt vorhanden, eventuell ständig einschalten
   
   // calculate the motorPwn for the current course delta
   float motorPwm = GetMotorPwm(courseDelta);
